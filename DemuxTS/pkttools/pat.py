@@ -1,4 +1,4 @@
-from prettytable import PrettyTable
+from DemuxTS.printtable import printpsi
 
 def pat_table(mpkt):
 
@@ -31,7 +31,8 @@ def pat_table(mpkt):
                 tvd_service_id_sd = 0xe760 == 59232
                 tvd_pmt_pid_sd = 1031
             '''
-            t = PrettyTable( ['Program Number', 'Network PID', 'PMT ID'], title='PAT HEADER')
+            pp = printpsi.Printer( ['Program Number', 'Network PID', 'PMT ID'], title='Program Association Table')
+            data = list()
             while mpkt.index() < boundary:
                 program_map_PID = '-'
                 network_PID = '-'
@@ -46,5 +47,5 @@ def pat_table(mpkt):
                     program_map_PID = int(program_map_PID)
                 except:
                     pass
-                t.add_row([hex(program_number), network_PID, program_map_PID])
-            print(t)
+                data.append({'program number':hex(program_number), 'network PID': network_PID, 'PMT ID': program_map_PID})
+            pp.print_table(data)

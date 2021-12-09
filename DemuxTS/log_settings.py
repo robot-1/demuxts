@@ -6,7 +6,7 @@ import logging
 
 '''
 def customLogger():
-    logging.basicConfig(level=logging.INFO,
+    logging.basicConfig(level=logging.DEBUG,
     format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
     datefmt='%m-%d %H:%M',
     filename='/tmp/demuxts.log',
@@ -15,7 +15,7 @@ def customLogger():
 
     console = logging.StreamHandler()
     console.setLevel(
-        logging.DEBUG
+        logging.INFO
     )
     formatter = logging.Formatter('%(name)-12s: %(levelname)-8s %(message)s')
     console.setFormatter(formatter)

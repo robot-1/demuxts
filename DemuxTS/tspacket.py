@@ -6,7 +6,6 @@ logger = logging.getLogger(__name__)
 class TSPacket():
     def __init__(self, tspacket):
         self.tspkt = ConstBitStream(tspacket)
-        logger.info('tspacket')
         self.sync_byte = b''
         self.transport_error_indicator = b''
         self.payload_unit_start_indicator = b''
@@ -48,7 +47,7 @@ class TSPacket():
 
     def has_adaptation_field(self):
         if self.adaptation_field_control == 2 or self.adaptation_field_control == 3:
-            print("fuvk")
+            logger.debug('Adaptation field detected')
             return 1
         return 0
 

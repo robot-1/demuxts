@@ -1,5 +1,6 @@
 from bitstring import ConstBitStream
 from prettytable import PrettyTable
+from DemuxTS.printtable import printpsi
 from collections import ChainMap
 import logging
 logger = logging.getLogger(__name__)
@@ -11,14 +12,14 @@ def pmt_table(mpkt):
     #\tPUSI: {mpkt.payload_unit_start_indicator}\tTP: {mpkt.transport_priority}\tPID: {mpkt.packet_pid} \
     #\tAFC: {mpkt.adaptation_field_control}\tCONT. CNT : {int(mpkt.continuity_counter,2)}")
     psi_fields = dict()
-    t = PrettyTable( ['Fields', 'Value'], title='PMT HEADER')
+    pp = printpsi.Printer( ['Fields', 'Value'], title='PMT HEADER')
     if mpkt.has_adaptation_field():
         mpkt.parse_adaptation_fields() 
 
     if mpkt.has_payload():
         if mpkt.payload_unit_start_indicator == 1:
             strp = mpkt.UIMSBF(8)
-            print(f'data pointer {strp}')
+            logger.debug('payload pointer %s', strp)
             if len(section) == 0:
                 pass
         # start of Program Specificic Information (PSI)
@@ -29,7 +30,7 @@ def pmt_table(mpkt):
         mpkt.seek(2)
         section_length_unused = mpkt.UIMSBF(2)
         section_length = mpkt.UIMSBF(10)
-        section_boundary = mpkt.index() + section_length * 8
+        section_boundary = (mpkt.index() + section_length * 8) - 32 # exclude CRC_32
         psi_fields.update({
             'id' :table_id,
             'ssi' :section_syntax_indicator,
@@ -58,19 +59,22 @@ def pmt_table(mpkt):
         psi_fields.update({
             'program info len' :program_info_lenght
         })
+        pp.print_table(psi_fields)
         es_list = list()
-        t2 = PrettyTable( ['stream type', 'elemetar pid'], title='PMT ES ID')
+        pp = printpsi.Printer( ['stream type', 'elemetar pid', 'es info length'], title='Program Elementary Stream ID')
         # Elementary stream data
+        logger.debug('pointer: %s',mpkt.index())
         while mpkt.index() < pil_boundary:
             es_datafields = dict()
             descriptor_tag = mpkt.UIMSBF(8)
             descriptor_length = mpkt.UIMSBF(8)
             descriptor_data = mpkt.BYTES(descriptor_length * 8)
-            es_list.append(es_datafields.update({
-                'descriptor tag' : descriptor_tag,
-                'descriptor length': descriptor_length,
-                'descriptor data': descriptor_data
-            }))
+            #es_list.append(es_datafields.update({
+            #    'descriptor tag' : descriptor_tag,
+            #    'descriptor length': descriptor_length,
+            #    'descriptor data': descriptor_data
+            #}))
+            logger.debug('pointer: %s',mpkt.index())
         # start of ES INFO
         while mpkt.index() < section_boundary:
             stream_type = mpkt.UIMSBF(8)
@@ -79,13 +83,13 @@ def pmt_table(mpkt):
             mpkt.seek(4)
             es_info_length_unused = mpkt.UIMSBF(2)
             es_info_length = mpkt.UIMSBF(10)
+            es_info_boundary = mpkt.index() + es_info_length * 8
             es_list.append({
-                'stream type' : stream_type,
+                'stream type' : hex(stream_type),
                 'elementary pid' : elementary_pid,
                 'es info lengh' : es_info_length
             })
-            print(es_list)
-            es_info_boundary = (mpkt.index() + es_info_length * 8)
+            logger.debug('es_boundary: %s', es_info_boundary)
             while mpkt.index() < es_info_boundary:
                 if elementary_pid == 2004 and stream_type == 0x0B: # DSMCC
                     # association_tag_descriptor [ETSI TR 101 202] [ISO/IEC 13818-6 [4]]
@@ -93,13 +97,10 @@ def pmt_table(mpkt):
                     descriptor_length = mpkt.UIMSBF(8)
                     desc_boundery = mpkt.index()  + descriptor_length * 8
                     association_tag = mpkt.UIMSBF(16)
-                    print(f'association tag: {hex(association_tag)}')
+                    logger.debug('association tag: %s', hex(association_tag))
                     use = mpkt.UIMSBF(16)
-                    print(f'use: {hex(use)}')
-                    
                     if use == 0x0000: # DSI message (IOR of SG)  PID
                         selector_length = mpkt.UIMSBF(8)
-                        print(f'Selector length: {hex(selector_length)}')
                         transaction_id = mpkt.UIMSBF(32)
                         timeout = mpkt.UIMSBF(32)
                     elif use == 0x0001:
@@ -115,37 +116,32 @@ def pmt_table(mpkt):
                             time_out_value_DII = mpkt.UIMSBF(32)
                             mpkt.seek(2)
                             leak_rate = mpkt.BSLBF(22)
-                    #last_bytes = desc_boundery - mpkt.index()
-                    #print(mpkt.index() < desc_boundery)
-                    #while mpkt.index() < desc_boundery:
-                    #    mpkt.UIMSBF(8) # private data
-
-                    #print(mpkt.index() < desc_boundery)
 
                     # stream identifier descriptor [EN 300 468 [1]]
                     descriptor_tag = mpkt.UIMSBF(8)
                     descriptor_length = mpkt.UIMSBF(8)
                     component_tag = mpkt.UIMSBF(8)
-                    print(f'component tag: {hex(component_tag)}')
-                    print(f'transaction id: {hex(transaction_id)}')
-                    print(f'timeout: {hex(timeout)}')
+                    logger.debug('component tag: %s', hex(component_tag))
+                    logger.debug('transaction id: %s', hex(transaction_id))
+                    logger.debug('timeout: %s', hex(timeout))
 
                     # carousel identifier descriptor  [ETSI TS 102 809]
                     descriptor_tag = mpkt.UIMSBF(8)
                     descriptor_length = mpkt.UIMSBF(8)
-                    print(f'cid_desc len: {hex(descriptor_length)}')
+                    logger.debug('carousel_identifier_desc length: %s', hex(descriptor_length))
                     cid_boundary = mpkt.index() + descriptor_length * 8
                     carousel_id = mpkt.UIMSBF(32)
                     format_id = mpkt.UIMSBF(8) # this is zero (0), no format specifier
-                    print(f'descriptor tag: {hex(descriptor_tag)}')
-                    print(f'carousel id: {hex(carousel_id)}')
-                    print(f'format id: {hex(format_id)}')
+                    logger.debug('descriptor tag: %s', hex(descriptor_tag))
+                    logger.debug('carousel id: %s', hex(carousel_id))
+                    logger.debug('format id: %s', hex(format_id))
                     if format_id == 0x00:
                         while mpkt.index() < cid_boundary:
                             try:
                                 mpkt.UIMSBF(8) # private data
                             except:
                                 break
+
                     if format_id == 0x01:
                         module_version = mpkt.UIMSBF(8)
                         module_id = mpkt.UIMSBF(16)
@@ -168,9 +164,10 @@ def pmt_table(mpkt):
                     descriptor_tag = mpkt.UIMSBF(8) # 0xfd set by opencaster
                     descriptor_length = mpkt.UIMSBF(8)
                     dcd_boundary = mpkt.index() + descriptor_length * 8
-                    data_componemt_id = mpkt.UIMSBF(16)
-                    print(f'dcd tag: {hex(descriptor_tag)}')
-                    print(f'data component id: {hex(data_componemt_id)}')
+                    data_componemt_id = mpkt.UIMSBF(16) # 0xA0, GINGA SYSTEM
+                    logger.debug('dcd tag: %s', hex(descriptor_tag))
+                    logger.debug('data component id: %s', hex(data_componemt_id))
+                    logger.debug('dcd boundary: %s', dcd_boundary)
                     while mpkt.index() < dcd_boundary:
                         # additional_data_component(additional_ginga_j_info) 
                         # for data component descriptor [ARIB STD-B24], ABNT NBR 15606-3:2007
@@ -182,7 +179,8 @@ def pmt_table(mpkt):
                             #application identifier, ABNT NBR 15606-3:2007 page 39
                             organization_id = mpkt.UIMSBF(32)
                             application_id = mpkt.UIMSBF(16)
-                        elif transmission_format == 0:
+
+                        if transmission_format == 0:
                             download_id = mpkt.UIMSBF(32)
                             ondemand_retrieval_flag = mpkt.BSLBF(1)
                             file_storable_flag = mpkt.BSLBF(1)
@@ -192,17 +190,16 @@ def pmt_table(mpkt):
                             reserved_future_use = mpkt.BSLBF(8)
                         elif transmission_format == 2:
                             carousel_id = mpkt.UIMSBF(32)
-                            print(f'carousel id: {hex(carousel_id)}')
+                            logger.debug('carousel id: %s', hex(carousel_id))
                             ondemand_retrieval_flag = mpkt.BSLBF(1)
                             file_storable_flag = mpkt.BSLBF(1)
                             event_section_flag = mpkt.BSLBF(1)
                             reserved_future_use = mpkt.BSLBF(5)
-                        print(f'transmission format: {hex(transmission_format)}')
-                        print(f'document resolution: {hex(document_resolution)}')
-                        print(f'organization id: {hex(organization_id)}')
-                        print(f'application id: {hex(application_id)}')
-                    
-                    
+                        logger.debug('transmission format: %s', hex(transmission_format))
+                        logger.debug('document resolution: %s', hex(document_resolution))
+                        logger.debug('organization id: %s', hex(organization_id))
+                        logger.debug('application id: %s', hex(application_id))
+                        logger.debug('pointer: %s', mpkt.index())
                     
                 elif stream_type == 5 and elementary_pid == 2001:
                     # data component descriptor [ARIB STD - B10 Part2]
@@ -210,7 +207,7 @@ def pmt_table(mpkt):
                     dc_descriptor_length = mpkt.UIMSBF(8)
                     ait_desc_boundary = (mpkt.index() + dc_descriptor_length * 8 )
                     data_componemt_id = mpkt.UIMSBF(16) # this should be 0xA3
-                    print(f'data comp id: {hex(data_componemt_id)}')
+                    logger.debug('data comp id: %s', hex(data_componemt_id))
                     while mpkt.index() < ait_desc_boundary:
                         # ait adentifier info [ARIB STD-B24]
                         application_type = mpkt.UIMSBF(16) # this should be 9
@@ -227,8 +224,10 @@ def pmt_table(mpkt):
                             application_type = mpkt.UIMSBF(15)
                             mpkt.seek(3)
                             AIT_version_number = mpkt.UIMSBF(5)
-             
+            #print(f'last data: {mpkt.BSLBF(32)}') 
+            #print(f'pointer: {mpkt.index()}')
         # end of ES INFO
             
+        pp.print_table(es_list)
         crc32 = mpkt.UIMSBF(32)
-        print(f'CRC32 {hex(crc32)}')
+        logger.debug('CRC32 %s', hex(crc32))
